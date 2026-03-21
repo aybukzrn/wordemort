@@ -1,10 +1,11 @@
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   PanResponder,
   StyleSheet,
   useWindowDimensions,
+  Animated,
 } from 'react-native';
 import { useScale } from '../utils/useScale';
 
@@ -13,6 +14,7 @@ interface Props {
   selectedIndices: number[];
   onSelectionChange: (indices: number[]) => void;
   onWordSubmit: (word: string) => void;
+  levelKey: number;
 }
 
 export function LetterWheel({
@@ -20,11 +22,11 @@ export function LetterWheel({
   selectedIndices,
   onSelectionChange,
   onWordSubmit,
+  levelKey,
 }: Props) {
   const { width: screenWidth } = useWindowDimensions();
   const s = useScale();
 
-  // Cap wheel size so it never exceeds the screen width with some padding
   const wheelSize = Math.min(Math.round(300 * s), screenWidth - 32);
   const letterRadius = Math.round(28 * s);
   const hitRadius = letterRadius + Math.round(10 * s);
@@ -33,7 +35,6 @@ export function LetterWheel({
   const pagePos = useRef({ x: 0, y: 0 });
   const currentIndices = useRef<number[]>([]);
 
-  // Use refs so PanResponder always has fresh values
   const lettersRef = useRef(letters);
   lettersRef.current = letters;
   const onSelectionChangeRef = useRef(onSelectionChange);
@@ -41,7 +42,6 @@ export function LetterWheel({
   const onWordSubmitRef = useRef(onWordSubmit);
   onWordSubmitRef.current = onWordSubmit;
 
-  // Keep sizing in refs so PanResponder callbacks always read fresh values
   const wheelSizeRef = useRef(wheelSize);
   wheelSizeRef.current = wheelSize;
   const letterRadiusRef = useRef(letterRadius);
@@ -74,6 +74,34 @@ export function LetterWheel({
   const letterPositionsRef = useRef(letterPositions);
   letterPositionsRef.current = letterPositions;
 
+  // ─── Entrance animations ────────────────────────────────────────────────────
+  const entranceAnims = useRef<Animated.Value[]>([]);
+  const prevLevelKeyRef = useRef(-1);
+
+  // Ensure we always have enough Animated.Values (grow if needed, never shrink)
+  while (entranceAnims.current.length < letters.length) {
+    entranceAnims.current.push(new Animated.Value(0));
+  }
+
+  useEffect(() => {
+    if (levelKey === prevLevelKeyRef.current) return;
+    prevLevelKeyRef.current = levelKey;
+
+    letters.forEach((_, i) => {
+      const anim = entranceAnims.current[i];
+      anim.setValue(0);
+      setTimeout(() => {
+        Animated.spring(anim, {
+          toValue: 1,
+          friction: 6,
+          tension: 180,
+          useNativeDriver: true,
+        }).start();
+      }, i * 55);
+    });
+  }, [levelKey, letters]);
+
+  // ─── Gesture ────────────────────────────────────────────────────────────────
   const getLetterIndex = useCallback((touchX: number, touchY: number): number => {
     const positions = letterPositionsRef.current;
     const hr = hitRadiusRef.current;
@@ -145,7 +173,7 @@ export function LetterWheel({
     }),
   ).current;
 
-  // Connection lines between consecutive selected letters
+  // ─── Connection lines ───────────────────────────────────────────────────────
   const lines = useMemo(() => {
     const result: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
     for (let i = 0; i < selectedIndices.length - 1; i++) {
@@ -195,8 +223,20 @@ export function LetterWheel({
       {letters.map((letter, i) => {
         const pos = letterPositions[i];
         const isSelected = selectedIndices.includes(i);
+        const entranceAnim = entranceAnims.current[i];
+
+        const entranceScale = entranceAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.2, 1],
+        });
+        const entranceOpacity = entranceAnim.interpolate({
+          inputRange: [0, 0.4, 1],
+          outputRange: [0, 1, 1],
+          extrapolate: 'clamp',
+        });
+
         return (
-          <View
+          <Animated.View
             key={i}
             style={[
               styles.letterCircle,
@@ -207,13 +247,17 @@ export function LetterWheel({
                 height: letterRadius * 2,
                 borderRadius: letterRadius,
                 backgroundColor: isSelected ? '#f0c040' : '#fff',
-                transform: [{ scale: isSelected ? 1.15 : 1 }],
+                opacity: entranceOpacity,
+                transform: [
+                  { scale: entranceScale },
+                  { scale: isSelected ? 1.15 : 1 },
+                ],
               },
             ]}>
             <Text style={[styles.letterText, { fontSize: Math.round(18 * s) }, isSelected && styles.letterTextSelected]}>
               {letter}
             </Text>
-          </View>
+          </Animated.View>
         );
       })}
     </View>

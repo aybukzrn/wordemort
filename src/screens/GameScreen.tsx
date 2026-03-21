@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Level } from '../types/game';
+import { Level, GameMode } from '../types/game';
 import { generateLevel } from '../utils/levelGenerator';
 import { useScale } from '../utils/useScale';
 import { GameHeader } from '../components/GameHeader';
@@ -19,11 +19,18 @@ import { WordTooltip } from '../components/WordTooltip';
 
 const MAX_HINTS = 3;
 
-export function GameScreen() {
+interface Props {
+  mode: GameMode;
+  initialLevel?: number;
+  onLevelChange?: (level: number) => void;
+  onHome: () => void;
+}
+
+export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Props) {
   const insets = useSafeAreaInsets();
   const s = useScale();
 
-  const [levelNum, setLevelNum] = useState(1);
+  const [levelNum, setLevelNum] = useState(initialLevel);
   const [restartKey, setRestartKey] = useState(0);
 
   const [currentLevel, setCurrentLevel] = useState<Level | null>(null);
@@ -47,6 +54,10 @@ export function GameScreen() {
   // Per-word progress dot animations
   const dotAnims = useRef<Animated.Value[]>([]);
 
+  // Word history — words from the last ~10 levels, to avoid repeats
+  const recentWordsRef = useRef<string[]>([]);
+  const HISTORY_SIZE = 60; // ~10 levels × 6 words avg
+
   // Stable refs for use in callbacks
   const levelRef = useRef<Level | null>(null);
   levelRef.current = currentLevel;
@@ -65,7 +76,10 @@ export function GameScreen() {
     setFlyText(null);
 
     const handle = setTimeout(() => {
-      const level = generateLevel(levelNum);
+      const exclude = new Set(recentWordsRef.current);
+      const level = generateLevel(levelNum, mode, exclude);
+      // Add this level's words to history after generation
+      recentWordsRef.current = [...recentWordsRef.current, ...level.words].slice(-HISTORY_SIZE);
       dotAnims.current = level.words.map(() => new Animated.Value(1));
       setCurrentLevel(level);
       setFoundWords(level.words.map(() => false));
@@ -144,10 +158,14 @@ export function GameScreen() {
       animateDot(wordIndex);
 
       if (newFoundWords.every(Boolean)) {
-        setTimeout(() => setLevelNum(n => n + 1), 700);
+        setTimeout(() => {
+          const next = (levelRef.current?.level ?? 1) + 1;
+          onLevelChange?.(next);
+          setLevelNum(next);
+        }, 700);
       }
     },
-    [shakeAnimation, showFlyUp, animateDot],
+    [shakeAnimation, showFlyUp, animateDot, onLevelChange],
   );
 
   const handleHint = useCallback(() => {
@@ -162,15 +180,26 @@ export function GameScreen() {
     animateDot(idx);
 
     if (newFoundWords.every(Boolean)) {
-      setTimeout(() => setLevelNum(n => n + 1), 500);
+      setTimeout(() => {
+        const next = (levelRef.current?.level ?? 1) + 1;
+        onLevelChange?.(next);
+        setLevelNum(next);
+      }, 500);
     }
-  }, [hints, currentLevel, animateDot]);
+  }, [hints, currentLevel, animateDot, onLevelChange]);
 
   const handleNewGame = useCallback(() => {
     setShowSettings(false);
+    recentWordsRef.current = [];
+    onLevelChange?.(1);
     setLevelNum(1);
     setRestartKey(k => k + 1);
-  }, []);
+  }, [onLevelChange]);
+
+  const handleHome = useCallback(() => {
+    setShowSettings(false);
+    onHome();
+  }, [onHome]);
 
   const handleWordPress = useCallback(
     (word: string, isRevealed: boolean) => {
@@ -220,17 +249,35 @@ export function GameScreen() {
 
         {/* Current word display */}
         <Animated.View
-          style={[styles.wordDisplayContainer, { transform: [{ translateX: shakeAnim }] }]}>
+          style={[
+            styles.wordDisplayContainer,
+            { height: Math.round(52 * s), transform: [{ translateX: shakeAnim }] },
+          ]}>
           {displayWord.length > 0 ? (
             <View
               style={[
                 styles.wordDisplay,
                 wrongWord ? styles.wordDisplayWrong : styles.wordDisplayActive,
+                {
+                  paddingHorizontal: Math.round(28 * s),
+                  paddingVertical: Math.round(12 * s),
+                  borderRadius: Math.round(16 * s),
+                  minWidth: Math.round(80 * s),
+                },
               ]}>
               <Text style={[styles.wordDisplayText, { fontSize: Math.round(22 * s) }]}>{displayWord}</Text>
             </View>
           ) : (
-            <View style={styles.wordDisplayEmpty} />
+            <View
+              style={[
+                styles.wordDisplayEmpty,
+                {
+                  width: Math.round(60 * s),
+                  height: Math.round(46 * s),
+                  borderRadius: Math.round(16 * s),
+                },
+              ]}
+            />
           )}
         </Animated.View>
 
@@ -241,6 +288,7 @@ export function GameScreen() {
             selectedIndices={selectedIndices}
             onSelectionChange={handleSelectionChange}
             onWordSubmit={handleWordSubmit}
+            levelKey={currentLevel.level}
           />
         </View>
 
@@ -317,6 +365,9 @@ export function GameScreen() {
             <Text style={styles.modalTitle}>Ayarlar</Text>
             <TouchableOpacity style={styles.primaryBtn} onPress={handleNewGame}>
               <Text style={styles.primaryBtnText}>Yeni Oyun Başlat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleHome}>
+              <Text style={styles.secondaryBtnText}>Ana Sayfaya Dön</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowSettings(false)}>
               <Text style={styles.secondaryBtnText}>Kapat</Text>

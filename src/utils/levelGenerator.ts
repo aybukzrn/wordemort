@@ -1,4 +1,4 @@
-import { Level, WordPlacement, Direction } from '../types/game';
+import { Level, WordPlacement, Direction, GameMode } from '../types/game';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const rawDict = require('../assets/turkish_dict.json') as Array<{
@@ -6,7 +6,14 @@ const rawDict = require('../assets/turkish_dict.json') as Array<{
   anlamlar?: string[];
 }>;
 
-const VALID = /^[A-ZÇĞİÖŞÜ]+$/;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const rawOxford = require('../assets/oxford_3000.json') as Array<{
+  tr: string;
+  en: string;
+}>;
+
+const TR_VALID = /^[A-ZÇĞİÖŞÜ]+$/;
+const EN_VALID = /^[A-Z]+$/;
 
 function turkishUppercase(str: string): string {
   return str
@@ -20,26 +27,58 @@ function turkishUppercase(str: string): string {
     .toUpperCase();
 }
 
-// Process the dictionary once at module load time
-const MEANINGS = new Map<string, string>();
+// ─── TR dictionary (existing) ─────────────────────────────────────────────────
+const TR_MEANINGS = new Map<string, string>();
 
-const ALL_WORDS: string[] = (() => {
+const TR_WORDS: string[] = (() => {
   const set = new Set<string>();
   for (const entry of rawDict) {
     const cleaned = (entry.madde || '').replace(/\s*\([^)]*\)/g, '').trim();
     if (!cleaned) continue;
     const upper = turkishUppercase(cleaned);
-    if (upper.length >= 3 && upper.length <= 7 && VALID.test(upper)) {
+    if (upper.length >= 3 && upper.length <= 7 && TR_VALID.test(upper)) {
       set.add(upper);
-      if (entry.anlamlar && entry.anlamlar.length > 0 && !MEANINGS.has(upper)) {
-        MEANINGS.set(upper, entry.anlamlar[0]);
+      if (entry.anlamlar && entry.anlamlar.length > 0 && !TR_MEANINGS.has(upper)) {
+        TR_MEANINGS.set(upper, entry.anlamlar[0]);
       }
     }
   }
   return Array.from(set);
 })();
 
-// ─── Difficulty config ───────────────────────────────────────────────────────
+// ─── Oxford EN→TR (English words, Turkish meanings) ──────────────────────────
+const EN_TR_MEANINGS = new Map<string, string>(); // EN word → TR meaning
+
+const EN_TR_WORDS: string[] = (() => {
+  const set = new Set<string>();
+  for (const entry of rawOxford) {
+    const en = entry.en.trim().toUpperCase();
+    if (en.length >= 3 && en.length <= 7 && EN_VALID.test(en)) {
+      set.add(en);
+      if (!EN_TR_MEANINGS.has(en)) EN_TR_MEANINGS.set(en, entry.tr);
+    }
+  }
+  return Array.from(set);
+})();
+
+// ─── Oxford TR→EN (Turkish words, English meanings) ──────────────────────────
+const TR_EN_MEANINGS = new Map<string, string>(); // TR word → EN meaning
+
+const TR_EN_WORDS: string[] = (() => {
+  const set = new Set<string>();
+  for (const entry of rawOxford) {
+    const cleaned = entry.tr.replace(/\s*\([^)]*\)/g, '').trim();
+    if (!cleaned || cleaned.includes(' ')) continue;
+    const upper = turkishUppercase(cleaned);
+    if (upper.length >= 3 && upper.length <= 7 && TR_VALID.test(upper)) {
+      set.add(upper);
+      if (!TR_EN_MEANINGS.has(upper)) TR_EN_MEANINGS.set(upper, entry.en);
+    }
+  }
+  return Array.from(set);
+})();
+
+// ─── Difficulty config ────────────────────────────────────────────────────────
 
 interface DifficultyConfig {
   seedMinLen: number;
@@ -62,7 +101,7 @@ function getDifficulty(levelNum: number): DifficultyConfig {
   return { seedMinLen: 5, seedMaxLen: 7, wordMinLen: 5, wordMaxLen: 7, minWords: 4, maxWords: 6 };
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function canFormWord(word: string, letterSet: Set<string>): boolean {
   for (const ch of word) {
@@ -96,7 +135,7 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-// ─── Crossword builder ───────────────────────────────────────────────────────
+// ─── Crossword builder ────────────────────────────────────────────────────────
 
 function isValidPlacement(
   word: string,
@@ -207,11 +246,18 @@ function buildCrossword(words: string[]): CrosswordResult | null {
   };
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// ─── Public API ───────────────────────────────────────────────────────────────
 
-export function generateLevel(levelNum: number): Level {
+export function generateLevel(
+  levelNum: number,
+  mode: GameMode = 'TR',
+  excludeWords?: Set<string>,
+): Level {
+  const allWords = mode === 'EN_TR' ? EN_TR_WORDS : mode === 'TR_EN' ? TR_EN_WORDS : TR_WORDS;
+  const meaningsMap = mode === 'EN_TR' ? EN_TR_MEANINGS : mode === 'TR_EN' ? TR_EN_MEANINGS : TR_MEANINGS;
+
   const config = getDifficulty(levelNum);
-  const seedPool = ALL_WORDS.filter(
+  const seedPool = allWords.filter(
     w => w.length >= config.seedMinLen && w.length <= config.seedMaxLen,
   );
 
@@ -221,11 +267,12 @@ export function generateLevel(levelNum: number): Level {
     if (uniqueLetters.length < 3 || uniqueLetters.length > 8) continue;
 
     const letterSet = new Set(uniqueLetters);
-    const formable = ALL_WORDS.filter(
+    const formable = allWords.filter(
       w =>
         w.length >= config.wordMinLen &&
         w.length <= config.wordMaxLen &&
-        canFormWord(w, letterSet),
+        canFormWord(w, letterSet) &&
+        (!excludeWords || !excludeWords.has(w)),
     );
 
     if (formable.length < config.minWords || formable.length > 50) continue;
@@ -248,7 +295,7 @@ export function generateLevel(levelNum: number): Level {
       const orderedWords = result.placements.map(p => p.word);
       const meanings: Record<string, string> = {};
       for (const w of orderedWords) {
-        meanings[w] = MEANINGS.get(w) ?? '';
+        meanings[w] = meaningsMap.get(w) ?? '';
       }
       return {
         level: levelNum,
@@ -263,5 +310,5 @@ export function generateLevel(levelNum: number): Level {
   }
 
   // Fallback: drop difficulty by one level and retry
-  return generateLevel(Math.max(1, levelNum - 1));
+  return generateLevel(Math.max(1, levelNum - 1), mode, excludeWords);
 }

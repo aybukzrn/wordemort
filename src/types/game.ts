@@ -1,5 +1,7 @@
 export type Direction = 'H' | 'V';
 
+export type GameMode = 'TR' | 'TR_EN' | 'EN_TR';
+
 export interface WordPlacement {
   word: string;
   row: number;

@@ -18,6 +18,7 @@ interface CellData {
   revealed: boolean;
   word: string;
   anim: Animated.Value;
+  entranceAnim: Animated.Value;
 }
 
 interface Props {
@@ -35,14 +36,14 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
   const cellGap = Math.round(3 * s);
   const cellStep = cellSize + cellGap;
 
-  // Animated value cache: `${row},${col}` → Animated.Value
-  // Keyed by level so changing levels never reuses stale values.
-  const animCache = useRef<{ levelNum: number; map: Map<string, Animated.Value> }>({
-    levelNum: -1,
-    map: new Map(),
-  });
+  // Animated value cache keyed by level — both word-reveal and entrance anims
+  const animCache = useRef<{
+    levelNum: number;
+    map: Map<string, Animated.Value>;
+    entranceMap: Map<string, Animated.Value>;
+  }>({ levelNum: -1, map: new Map(), entranceMap: new Map() });
 
-  // Shared scale anim for all highlighted cells — pops when a word is highlighted
+  // Shared scale anim for all highlighted cells
   const highlightScaleAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (highlightedWord) {
@@ -64,9 +65,8 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
 
   // ─── Build cell list ────────────────────────────────────────────────────────
   const cells = useMemo((): CellData[] => {
-    // Reset cache when level changes
     if (animCache.current.levelNum !== level.level) {
-      animCache.current = { levelNum: level.level, map: new Map() };
+      animCache.current = { levelNum: level.level, map: new Map(), entranceMap: new Map() };
       prevFoundRef.current = level.words.map(() => false);
     }
 
@@ -90,14 +90,44 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
 
     return Array.from(map.entries()).map(([key, data]) => {
       const [row, col] = key.split(',').map(Number);
+
       let anim = animCache.current.map.get(key);
       if (!anim) {
         anim = new Animated.Value(data.revealed ? 1 : 0);
         animCache.current.map.set(key, anim);
       }
-      return { row, col, ...data, anim };
+
+      let entranceAnim = animCache.current.entranceMap.get(key);
+      if (!entranceAnim) {
+        entranceAnim = new Animated.Value(0);
+        animCache.current.entranceMap.set(key, entranceAnim);
+      }
+
+      return { row, col, ...data, anim, entranceAnim };
     });
   }, [level, foundWords]);
+
+  // ─── Level entrance animation (diagonal sweep) ──────────────────────────────
+  useEffect(() => {
+    const entries = Array.from(animCache.current.entranceMap.entries());
+    // Sort by diagonal index (row + col) → top-left to bottom-right sweep
+    entries.sort(([a], [b]) => {
+      const [ar, ac] = a.split(',').map(Number);
+      const [br, bc] = b.split(',').map(Number);
+      return (ar + ac) - (br + bc);
+    });
+    entries.forEach(([, anim], i) => {
+      anim.setValue(0);
+      setTimeout(() => {
+        Animated.spring(anim, {
+          toValue: 1,
+          friction: 7,
+          tension: 200,
+          useNativeDriver: true,
+        }).start();
+      }, i * 35);
+    });
+  }, [level.level]);
 
   // ─── Animate newly revealed cells ──────────────────────────────────────────
   useEffect(() => {
@@ -159,6 +189,17 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
           extrapolate: 'clamp',
         });
 
+        // Entrance: scale from 0.3→1 (spring overshoots to ~1.1 for pop feel)
+        const entranceScale = cell.entranceAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.3, 1],
+        });
+        const entranceOpacity = cell.entranceAnim.interpolate({
+          inputRange: [0, 0.4, 1],
+          outputRange: [0, 1, 1],
+          extrapolate: 'clamp',
+        });
+
         const isHighlighted = !!highlightedWord && cell.word === highlightedWord;
 
         return (
@@ -181,7 +222,11 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
                 {
                   borderRadius: Math.round(6 * s),
                   backgroundColor: isHighlighted ? '#f0c040' : 'rgba(255,255,255,0.92)',
-                  transform: [{ scale: isHighlighted ? highlightScaleAnim : 1 }],
+                  opacity: entranceOpacity,
+                  transform: [
+                    { scale: entranceScale },
+                    { scale: isHighlighted ? highlightScaleAnim : 1 },
+                  ],
                 },
               ]}>
               {cell.revealed && (

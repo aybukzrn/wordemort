@@ -18,7 +18,7 @@ export function GameHeader({ level, hints, onHint, onSettings }: Props) {
       <TouchableOpacity
         style={[styles.settingsBtn, { width: btnSize, height: btnSize, borderRadius: btnSize / 2 }]}
         onPress={onSettings}>
-        <Text style={[styles.settingsIcon, { fontSize: Math.round(22 * s) }]}>{'\u2699'}</Text>
+        <Text style={[styles.settingsIcon, { fontSize: Math.round(22 * s), lineHeight: Math.round(28 * s) }]}>{'\u2699'}</Text>
       </TouchableOpacity>
 
       <View style={[styles.levelBadge, { paddingHorizontal: Math.round(20 * s), paddingVertical: Math.round(8 * s) }]}>

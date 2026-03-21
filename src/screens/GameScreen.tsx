@@ -7,15 +7,28 @@ import {
   Modal,
   TouchableOpacity,
   ActivityIndicator,
+  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Level, GameMode } from '../types/game';
 import { generateLevel } from '../utils/levelGenerator';
 import { useScale } from '../utils/useScale';
 import { GameHeader } from '../components/GameHeader';
-import { WordGrid } from '../components/WordGrid';
-import { LetterWheel } from '../components/LetterWheel';
+import { WordGrid, WordGridRef } from '../components/WordGrid';
+import { LetterWheel, LetterWheelRef } from '../components/LetterWheel';
 import { WordTooltip } from '../components/WordTooltip';
+
+interface FlyLetter {
+  id: number;
+  letter: string;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  startSize: number;
+  endSize: number;
+  anim: Animated.Value;
+}
 
 const MAX_HINTS = 3;
 
@@ -47,9 +60,13 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
     meaning: string;
   } | null>(null);
 
-  // Fly-up animation when a correct word is found
-  const [flyText, setFlyText] = useState<string | null>(null);
-  const flyAnim = useRef(new Animated.Value(0)).current;
+
+  // Fly-to-grid animation
+  const [flyingLetters, setFlyingLetters] = useState<FlyLetter[]>([]);
+  const flyIdRef = useRef(0);
+  const selectedIndicesRef = useRef<number[]>([]);
+  const wheelRef = useRef<LetterWheelRef>(null);
+  const gridRef = useRef<WordGridRef>(null);
 
   // Per-word progress dot animations
   const dotAnims = useRef<Animated.Value[]>([]);
@@ -73,7 +90,6 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
     setCurrentWord('');
     setWrongWord('');
     setTooltip(null);
-    setFlyText(null);
 
     const handle = setTimeout(() => {
       const exclude = new Set(recentWordsRef.current);
@@ -99,19 +115,6 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
     ]).start();
   }, [shakeAnim]);
 
-  // ─── Fly-up word animation ─────────────────────────────────────────────────
-  const showFlyUp = useCallback(
-    (word: string) => {
-      flyAnim.setValue(0);
-      setFlyText(word);
-      Animated.timing(flyAnim, {
-        toValue: 1,
-        duration: 900,
-        useNativeDriver: true,
-      }).start(() => setFlyText(null));
-    },
-    [flyAnim],
-  );
 
   // ─── Dot bounce animation ──────────────────────────────────────────────────
   const animateDot = useCallback((idx: number) => {
@@ -126,12 +129,28 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const handleSelectionChange = useCallback(
     (indices: number[]) => {
+      selectedIndicesRef.current = indices;
       setSelectedIndices(indices);
       if (currentLevel) {
         setCurrentWord(indices.map(i => currentLevel.letters[i]).join(''));
       }
     },
     [currentLevel],
+  );
+
+  const revealWord = useCallback(
+    (wordIndex: number, newFoundWords: boolean[]) => {
+      setFoundWords(newFoundWords);
+      animateDot(wordIndex);
+      if (newFoundWords.every(Boolean)) {
+        setTimeout(() => {
+          const next = (levelRef.current?.level ?? 1) + 1;
+          onLevelChange?.(next);
+          setLevelNum(next);
+        }, 700);
+      }
+    },
+    [animateDot, onLevelChange],
   );
 
   const handleWordSubmit = useCallback(
@@ -149,23 +168,61 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
         return;
       }
 
-      // Correct word found
       const newFoundWords = [...currentFound];
       newFoundWords[wordIndex] = true;
-      setFoundWords(newFoundWords);
 
-      showFlyUp(word);
-      animateDot(wordIndex);
+      const placement = level.placements.find(p => p.word === word);
+      const capturedIndices = [...selectedIndicesRef.current];
+      const wheel = wheelRef.current;
+      const grid = gridRef.current;
 
-      if (newFoundWords.every(Boolean)) {
-        setTimeout(() => {
-          const next = (levelRef.current?.level ?? 1) + 1;
-          onLevelChange?.(next);
-          setLevelNum(next);
-        }, 700);
+      if (placement && capturedIndices.length > 0 && wheel && grid) {
+        grid.getCellCentersAbsolute(placement, cellCenters => {
+          const letterR = wheel.getLetterRadius();
+          const newLetters: FlyLetter[] = capturedIndices.map((letterIdx, i) => {
+            const from = wheel.getLetterCenterAbsolute(letterIdx);
+            const to = cellCenters[i] ?? cellCenters[cellCenters.length - 1];
+            return {
+              id: ++flyIdRef.current,
+              letter: level.letters[letterIdx],
+              startX: from.x,
+              startY: from.y,
+              endX: to.x,
+              endY: to.y,
+              startSize: letterR * 2,
+              endSize: to.size,
+              anim: new Animated.Value(0),
+            };
+          });
+
+          setFlyingLetters(prev => [...prev, ...newLetters]);
+
+          newLetters.forEach((fl, i) => {
+            setTimeout(() => {
+              Animated.timing(fl.anim, {
+                toValue: 1,
+                duration: 320,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }).start();
+            }, i * 35);
+          });
+
+          const totalDuration = (newLetters.length - 1) * 35 + 320 + 60;
+          // Reveal word first so grid cell animation starts, then remove fly letters
+          // once the grid letter opacity has become visible (~200ms into the spring)
+          setTimeout(() => {
+            revealWord(wordIndex, newFoundWords);
+            setTimeout(() => {
+              setFlyingLetters(prev => prev.filter(fl => !newLetters.some(nl => nl.id === fl.id)));
+            }, 220);
+          }, totalDuration);
+        });
+      } else {
+        revealWord(wordIndex, newFoundWords);
       }
     },
-    [shakeAnimation, showFlyUp, animateDot, onLevelChange],
+    [shakeAnimation, revealWord],
   );
 
   const handleHint = useCallback(() => {
@@ -229,7 +286,9 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <GameHeader
-        level={currentLevel.level}
+        currentWord={displayWord}
+        isWrong={!!wrongWord}
+        shakeAnim={shakeAnim}
         hints={hints}
         onHint={handleHint}
         onSettings={() => setShowSettings(true)}
@@ -240,6 +299,7 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
         {/* Grid */}
         <View style={styles.gridContainer}>
           <WordGrid
+            ref={gridRef}
             level={currentLevel}
             foundWords={foundWords}
             onWordPress={handleWordPress}
@@ -247,43 +307,10 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
           />
         </View>
 
-        {/* Current word display */}
-        <Animated.View
-          style={[
-            styles.wordDisplayContainer,
-            { height: Math.round(52 * s), transform: [{ translateX: shakeAnim }] },
-          ]}>
-          {displayWord.length > 0 ? (
-            <View
-              style={[
-                styles.wordDisplay,
-                wrongWord ? styles.wordDisplayWrong : styles.wordDisplayActive,
-                {
-                  paddingHorizontal: Math.round(28 * s),
-                  paddingVertical: Math.round(12 * s),
-                  borderRadius: Math.round(16 * s),
-                  minWidth: Math.round(80 * s),
-                },
-              ]}>
-              <Text style={[styles.wordDisplayText, { fontSize: Math.round(22 * s) }]}>{displayWord}</Text>
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.wordDisplayEmpty,
-                {
-                  width: Math.round(60 * s),
-                  height: Math.round(46 * s),
-                  borderRadius: Math.round(16 * s),
-                },
-              ]}
-            />
-          )}
-        </Animated.View>
-
         {/* Letter wheel */}
         <View style={styles.wheelContainer}>
           <LetterWheel
+            ref={wheelRef}
             letters={currentLevel.letters}
             selectedIndices={selectedIndices}
             onSelectionChange={handleSelectionChange}
@@ -311,38 +338,6 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
           ))}
         </View>
 
-        {/* Fly-up word (correct word celebration) */}
-        <View style={styles.flyContainer} pointerEvents="none">
-          {flyText && (
-            <Animated.Text
-              style={[
-                styles.flyText,
-                {
-                  fontSize: Math.round(24 * s),
-                  opacity: flyAnim.interpolate({
-                    inputRange: [0, 0.15, 0.75, 1],
-                    outputRange: [0, 1, 1, 0],
-                  }),
-                  transform: [
-                    {
-                      translateY: flyAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, -90],
-                      }),
-                    },
-                    {
-                      scale: flyAnim.interpolate({
-                        inputRange: [0, 0.15, 1],
-                        outputRange: [0.7, 1.1, 1],
-                      }),
-                    },
-                  ],
-                },
-              ]}>
-              {flyText}
-            </Animated.Text>
-          )}
-        </View>
 
         {/* Tooltip — covers the full content area (grid + wheel) */}
         {tooltip && (
@@ -354,6 +349,43 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
 
         )}
       </View>
+
+      {/* Flying letters — full-screen absolute overlay so measureInWindow coords map directly */}
+      {flyingLetters.length > 0 && (
+        <View style={styles.flyLettersOverlay} pointerEvents="none">
+          {flyingLetters.map(fl => {
+            // View is sized at endSize and positioned so its center starts at (startX, startY).
+            // scale starts at startSize/endSize (appears as wheel circle) and animates to 1 (grid cell size).
+            // translateX/Y moves the center from start to end position.
+            const translateX = fl.anim.interpolate({ inputRange: [0, 1], outputRange: [0, fl.endX - fl.startX] });
+            const translateY = fl.anim.interpolate({ inputRange: [0, 1], outputRange: [0, fl.endY - fl.startY] });
+            const scale = fl.anim.interpolate({ inputRange: [0, 1], outputRange: [fl.startSize / fl.endSize, 1] });
+            const fontSize = Math.round(fl.endSize * 0.5);
+            return (
+              <Animated.View
+                key={fl.id}
+                style={[
+                  styles.flyLetterCircle,
+                  {
+                    width: fl.endSize,
+                    height: fl.endSize,
+                    borderRadius: Math.round(fl.endSize / 6),
+                    left: fl.startX - fl.endSize / 2,
+                    top: fl.startY - fl.endSize / 2,
+                    transform: [{ translateX }, { translateY }, { scale }],
+                  },
+                ]}>
+                <Text style={[styles.flyLetterText, { fontSize }]}>{fl.letter}</Text>
+              </Animated.View>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Level label — bottom-right, low opacity */}
+      <Text style={[styles.levelLabel, { fontSize: Math.round(12 * s), bottom: insets.bottom + Math.round(10 * s) }]}>
+        Seviye {currentLevel.level}
+      </Text>
 
       {/* Settings modal */}
       <Modal visible={showSettings} transparent animationType="fade">
@@ -449,24 +481,11 @@ const styles = StyleSheet.create({
   progressDotFound: {
     backgroundColor: '#f0c040',
   },
-  flyContainer: {
+  levelLabel: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5,
-  },
-  flyText: {
-    color: '#f0c040',
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: 4,
-    textShadowColor: 'rgba(0,0,0,0.2)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    right: 14,
+    color: 'rgba(255,255,255,0.3)',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,
@@ -523,5 +542,29 @@ const styles = StyleSheet.create({
     color: '#1a3a6b',
     fontSize: 15,
     fontWeight: '600',
+  },
+  flyLettersOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+  },
+  flyLetterCircle: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 4,
+    zIndex: 20,
+  },
+  flyLetterText: {
+    color: '#1a3a6b',
+    fontWeight: '700',
   },
 });

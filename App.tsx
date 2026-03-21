@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,8 +8,8 @@ import { GameScreen } from './src/screens/GameScreen';
 
 type Screen = 'home' | 'game';
 
-const STORAGE_KEY_MODE = '@wordemort_mode';
-const STORAGE_KEY_LEVEL = '@wordemort_level';
+const STORAGE_KEY_ACTIVE_MODE = '@wordemort_mode';
+const levelKey = (mode: GameMode) => `@wordemort_level_${mode}`;
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -17,15 +17,32 @@ export default function App() {
   const [savedLevel, setSavedLevel] = useState<number>(1);
   const [ready, setReady] = useState(false);
 
+  // In-memory cache of last reached level per mode
+  const savedLevels = useRef<Record<GameMode, number>>({ TR: 1, TR_EN: 1, EN_TR: 1 });
+  const gameModeRef = useRef<GameMode>('TR');
+  gameModeRef.current = gameMode;
+
   // Load persisted state on mount
   useEffect(() => {
     (async () => {
       try {
-        const modeVal = await AsyncStorage.getItem(STORAGE_KEY_MODE);
-        const levelVal = await AsyncStorage.getItem(STORAGE_KEY_LEVEL);
-        if (modeVal && levelVal) {
-          setGameMode(modeVal as GameMode);
-          setSavedLevel(parseInt(levelVal, 10) || 1);
+        const [modeVal, trVal, trEnVal, enTrVal] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEY_ACTIVE_MODE),
+          AsyncStorage.getItem(levelKey('TR')),
+          AsyncStorage.getItem(levelKey('TR_EN')),
+          AsyncStorage.getItem(levelKey('EN_TR')),
+        ]);
+
+        savedLevels.current = {
+          TR: parseInt(trVal ?? '1', 10) || 1,
+          TR_EN: parseInt(trEnVal ?? '1', 10) || 1,
+          EN_TR: parseInt(enTrVal ?? '1', 10) || 1,
+        };
+
+        if (modeVal) {
+          const mode = modeVal as GameMode;
+          setGameMode(mode);
+          setSavedLevel(savedLevels.current[mode]);
           setScreen('game');
         }
       } catch {
@@ -37,23 +54,20 @@ export default function App() {
   }, []);
 
   const handleSelectMode = (mode: GameMode) => {
-    if (mode !== gameMode) {
-      // Different mode — start fresh
-      setSavedLevel(1);
-      AsyncStorage.setItem(STORAGE_KEY_MODE, mode);
-      AsyncStorage.setItem(STORAGE_KEY_LEVEL, '1');
-      setGameMode(mode);
-    }
-    // Same mode — savedLevel already holds the last checkpoint, keep it
+    setGameMode(mode);
+    setSavedLevel(savedLevels.current[mode]);
     setScreen('game');
+    AsyncStorage.setItem(STORAGE_KEY_ACTIVE_MODE, mode);
   };
 
   const handleLevelChange = (level: number) => {
+    const mode = gameModeRef.current;
+    savedLevels.current[mode] = level;
     setSavedLevel(level);
-    AsyncStorage.setItem(STORAGE_KEY_LEVEL, String(level));
+    AsyncStorage.setItem(levelKey(mode), String(level));
   };
 
-  // Going home just pauses — progress is kept in AsyncStorage
+  // Going home pauses progress — everything stays in AsyncStorage
   const handleHome = () => {
     setScreen('home');
   };

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,8 +6,15 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
-import { Level } from '../types/game';
+import { Level, WordPlacement } from '../types/game';
 import { useScale } from '../utils/useScale';
+
+export interface WordGridRef {
+  getCellCentersAbsolute: (
+    placement: WordPlacement,
+    callback: (centers: Array<{ x: number; y: number; size: number }>) => void,
+  ) => void;
+}
 
 const GRID_H_PADDING = 40;
 
@@ -28,7 +35,10 @@ interface Props {
   highlightedWord?: string;
 }
 
-export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Props) {
+export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
+  { level, foundWords, onWordPress, highlightedWord },
+  ref,
+) {
   const { width: screenWidth } = useWindowDimensions();
   const s = useScale();
 
@@ -59,9 +69,48 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
   // Track previous foundWords to detect newly revealed words
   const prevFoundRef = useRef<boolean[]>([]);
 
+  const { height: screenHeight } = useWindowDimensions();
+
   const naturalWidth = level.gridCols * cellStep - cellGap;
-  const available = screenWidth - GRID_H_PADDING;
-  const gridScale = naturalWidth > available ? available / naturalWidth : 1;
+  const naturalHeight = level.gridRows * cellStep - cellGap;
+  const availableWidth = screenWidth - GRID_H_PADDING;
+  // Grid gets ~40% of screen height; rest is for header, word display, wheel, dots
+  const availableHeight = Math.round(screenHeight * 0.40);
+  const scaleByWidth = naturalWidth > availableWidth ? availableWidth / naturalWidth : 1;
+  const scaleByHeight = naturalHeight > availableHeight ? availableHeight / naturalHeight : 1;
+  const gridScale = Math.min(scaleByWidth, scaleByHeight);
+
+  const gridViewRef = useRef<View>(null);
+  const cellSizeRef = useRef(cellSize);
+  cellSizeRef.current = cellSize;
+  const cellStepRef = useRef(cellStep);
+  cellStepRef.current = cellStep;
+  const gridScaleRef = useRef(gridScale);
+  gridScaleRef.current = gridScale;
+
+  useImperativeHandle(ref, () => ({
+    getCellCentersAbsolute: (placement, callback) => {
+      const view = gridViewRef.current;
+      if (!view) { callback([]); return; }
+      view.measureInWindow((gx, gy) => {
+        const cs = cellSizeRef.current;
+        const step = cellStepRef.current;
+        const scale = gridScaleRef.current;
+        const centers: Array<{ x: number; y: number; size: number }> = [];
+        for (let i = 0; i < placement.word.length; i++) {
+          const row = placement.dir === 'H' ? placement.row : placement.row + i;
+          const col = placement.dir === 'H' ? placement.col + i : placement.col;
+          centers.push({
+            x: gx + (col * step + cs / 2) * scale,
+            y: gy + (row * step + cs / 2) * scale,
+            size: cs * scale,
+          });
+        }
+        callback(centers);
+      });
+    },
+  }));
+
 
   // ─── Build cell list ────────────────────────────────────────────────────────
   const cells = useMemo((): CellData[] => {
@@ -168,13 +217,14 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
 
   return (
     <View
+      ref={gridViewRef}
       style={[
         styles.grid,
         {
           width: gridWidth,
           height: gridHeight,
           transform: [{ scale: gridScale }],
-          marginBottom: gridHeight * (gridScale - 1),
+          marginBottom: Math.round(gridHeight * (gridScale - 1)),
         },
       ]}>
       {cells.map(cell => {
@@ -249,7 +299,7 @@ export function WordGrid({ level, foundWords, onWordPress, highlightedWord }: Pr
       })}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   grid: {

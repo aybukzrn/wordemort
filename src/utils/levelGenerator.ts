@@ -103,9 +103,11 @@ function getDifficulty(levelNum: number): DifficultyConfig {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function canFormWord(word: string, letterSet: Set<string>): boolean {
-  for (const ch of word) {
-    if (!letterSet.has(ch)) return false;
+function canFormWord(word: string, letterCounts: Map<string, number>): boolean {
+  const needed = new Map<string, number>();
+  for (const ch of word) needed.set(ch, (needed.get(ch) ?? 0) + 1);
+  for (const [ch, count] of needed) {
+    if ((letterCounts.get(ch) ?? 0) < count) return false;
   }
   return true;
 }
@@ -266,12 +268,14 @@ export function generateLevel(
     const uniqueLetters = [...new Set(seed.split(''))];
     if (uniqueLetters.length < 3 || uniqueLetters.length > 8) continue;
 
-    const letterSet = new Set(uniqueLetters);
+    const letterCounts = new Map<string, number>();
+    for (const ch of seed) letterCounts.set(ch, (letterCounts.get(ch) ?? 0) + 1);
+
     const formable = allWords.filter(
       w =>
         w.length >= config.wordMinLen &&
         w.length <= config.wordMaxLen &&
-        canFormWord(w, letterSet) &&
+        canFormWord(w, letterCounts) &&
         (!excludeWords || !excludeWords.has(w)),
     );
 

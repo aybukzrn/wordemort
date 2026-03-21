@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,11 @@ import {
 } from 'react-native';
 import { useScale } from '../utils/useScale';
 
+export interface LetterWheelRef {
+  getLetterCenterAbsolute: (index: number) => { x: number; y: number };
+  getLetterRadius: () => number;
+}
+
 interface Props {
   letters: string[];
   selectedIndices: number[];
@@ -17,19 +22,36 @@ interface Props {
   levelKey: number;
 }
 
-export function LetterWheel({
-  letters,
-  selectedIndices,
-  onSelectionChange,
-  onWordSubmit,
-  levelKey,
-}: Props) {
-  const { width: screenWidth } = useWindowDimensions();
+export const LetterWheel = forwardRef<LetterWheelRef, Props>(function LetterWheel(
+  { letters, selectedIndices, onSelectionChange, onWordSubmit, levelKey },
+  ref,
+) {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const s = useScale();
 
-  const wheelSize = Math.min(Math.round(300 * s), screenWidth - 32);
-  const letterRadius = Math.round(28 * s);
-  const hitRadius = letterRadius + Math.round(10 * s);
+  const wheelSize = Math.min(
+    Math.round(300 * s),
+    screenWidth - 32,
+    Math.round(screenHeight * 0.34),
+  );
+
+  // Orbit radius (distance from center to letter circle center)
+  const baseOrbitGap = letters.length <= 4 ? Math.round(28 * s) : Math.round(18 * s);
+  // Compute the max letter radius that fits on the orbit without overlapping
+  // arc distance between letters = 2π * orbitRadius / n >= 2 * letterRadius
+  // orbitRadius = wheelSize/2 - letterRadius - baseOrbitGap
+  // Solving: letterRadius * (n + π) <= π * (wheelSize/2 - baseOrbitGap)
+  const maxLetterRadius = Math.floor(
+    (Math.PI * (wheelSize / 2 - baseOrbitGap)) / (letters.length + Math.PI),
+  );
+  const letterRadius = Math.min(Math.round(28 * s), maxLetterRadius);
+  const hitRadius = letterRadius + Math.round(8 * s);
+
+  const orbitRadius = wheelSize / 2 - letterRadius - baseOrbitGap;
+
+  const [fingerPos, setFingerPos] = useState<{ x: number; y: number } | null>(null);
+  const setFingerPosRef = useRef(setFingerPos);
+  setFingerPosRef.current = setFingerPos;
 
   const containerRef = useRef<View>(null);
   const pagePos = useRef({ x: 0, y: 0 });
@@ -42,30 +64,20 @@ export function LetterWheel({
   const onWordSubmitRef = useRef(onWordSubmit);
   onWordSubmitRef.current = onWordSubmit;
 
-  const wheelSizeRef = useRef(wheelSize);
-  wheelSizeRef.current = wheelSize;
   const letterRadiusRef = useRef(letterRadius);
   letterRadiusRef.current = letterRadius;
   const hitRadiusRef = useRef(hitRadius);
   hitRadiusRef.current = hitRadius;
 
-  const orbitRadius =
-    letters.length <= 4
-      ? wheelSize / 2 - letterRadius - Math.round(28 * s)
-      : wheelSize / 2 - letterRadius - Math.round(18 * s);
-
   const letterPositions = useMemo(() => {
-    const ws = wheelSizeRef.current;
-    const lr = letterRadiusRef.current;
-    const orbit =
-      letters.length <= 4
-        ? ws / 2 - lr - Math.round(28 * s)
-        : ws / 2 - lr - Math.round(18 * s);
+    const ws = wheelSize;
+    const lr = letterRadius;
+    const orb = ws / 2 - lr - baseOrbitGap;
     return letters.map((_, i) => {
       const angle = (2 * Math.PI * i) / letters.length - Math.PI / 2;
       return {
-        x: ws / 2 + orbit * Math.cos(angle),
-        y: ws / 2 + orbit * Math.sin(angle),
+        x: ws / 2 + orb * Math.cos(angle),
+        y: ws / 2 + orb * Math.sin(angle),
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,11 +86,22 @@ export function LetterWheel({
   const letterPositionsRef = useRef(letterPositions);
   letterPositionsRef.current = letterPositions;
 
+  useImperativeHandle(ref, () => ({
+    getLetterCenterAbsolute: (index: number) => {
+      const pos = letterPositionsRef.current[index];
+      if (!pos) return { x: 0, y: 0 };
+      return {
+        x: pagePos.current.x + pos.x,
+        y: pagePos.current.y + pos.y,
+      };
+    },
+    getLetterRadius: () => letterRadiusRef.current,
+  }));
+
   // ─── Entrance animations ────────────────────────────────────────────────────
   const entranceAnims = useRef<Animated.Value[]>([]);
   const prevLevelKeyRef = useRef(-1);
 
-  // Ensure we always have enough Animated.Values (grow if needed, never shrink)
   while (entranceAnims.current.length < letters.length) {
     entranceAnims.current.push(new Animated.Value(0));
   }
@@ -131,11 +154,13 @@ export function LetterWheel({
         const newIndices = idx >= 0 ? [idx] : [];
         currentIndices.current = newIndices;
         onSelectionChangeRef.current([...newIndices]);
+        setFingerPosRef.current({ x: touchX, y: touchY });
       },
 
       onPanResponderMove: e => {
         const touchX = e.nativeEvent.pageX - pagePos.current.x;
         const touchY = e.nativeEvent.pageY - pagePos.current.y;
+        setFingerPosRef.current({ x: touchX, y: touchY });
         const idx = getLetterIndex(touchX, touchY);
 
         if (idx < 0) return;
@@ -164,11 +189,13 @@ export function LetterWheel({
         }
         currentIndices.current = [];
         onSelectionChangeRef.current([]);
+        setFingerPosRef.current(null);
       },
 
       onPanResponderTerminate: () => {
         currentIndices.current = [];
         onSelectionChangeRef.current([]);
+        setFingerPosRef.current(null);
       },
     }),
   ).current;
@@ -219,6 +246,35 @@ export function LetterWheel({
         );
       })}
 
+      {/* Live trailing line: last selected letter → finger */}
+      {fingerPos && selectedIndices.length > 0 && (() => {
+        const last = letterPositions[selectedIndices[selectedIndices.length - 1]];
+        if (!last) return null;
+        const dx = fingerPos.x - last.x;
+        const dy = fingerPos.y - last.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if (length < 2) return null;
+        const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        const cx = (last.x + fingerPos.x) / 2;
+        const cy = (last.y + fingerPos.y) / 2;
+        return (
+          <View
+            style={[
+              styles.line,
+              styles.lineLive,
+              {
+                height: lineHeight,
+                borderRadius: lineHeight / 2,
+                width: length,
+                left: cx - length / 2,
+                top: cy - lineHeight / 2,
+                transform: [{ rotate: `${angle}deg` }],
+              },
+            ]}
+          />
+        );
+      })()}
+
       {/* Letter circles */}
       {letters.map((letter, i) => {
         const pos = letterPositions[i];
@@ -254,7 +310,12 @@ export function LetterWheel({
                 ],
               },
             ]}>
-            <Text style={[styles.letterText, { fontSize: Math.round(18 * s) }, isSelected && styles.letterTextSelected]}>
+            <Text
+              style={[
+                styles.letterText,
+                { fontSize: Math.round(letterRadius * 0.65) },
+                isSelected && styles.letterTextSelected,
+              ]}>
               {letter}
             </Text>
           </Animated.View>
@@ -262,7 +323,7 @@ export function LetterWheel({
       })}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -271,6 +332,9 @@ const styles = StyleSheet.create({
   line: {
     position: 'absolute',
     backgroundColor: 'rgba(240,192,64,0.7)',
+  },
+  lineLive: {
+    backgroundColor: 'rgba(240,192,64,0.4)',
   },
   letterCircle: {
     position: 'absolute',

@@ -1,15 +1,17 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { useScale } from '../utils/useScale';
 
 interface Props {
-  level: number;
+  currentWord: string;
+  isWrong: boolean;
+  shakeAnim: Animated.Value;
   hints: number;
   onHint: () => void;
   onSettings: () => void;
 }
 
-export function GameHeader({ level, hints, onHint, onSettings }: Props) {
+export function GameHeader({ currentWord, isWrong, shakeAnim, hints, onHint, onSettings }: Props) {
   const s = useScale();
   const btnSize = Math.round(44 * s);
 
@@ -21,9 +23,17 @@ export function GameHeader({ level, hints, onHint, onSettings }: Props) {
         <Text style={[styles.settingsIcon, { fontSize: Math.round(22 * s), lineHeight: Math.round(28 * s) }]}>{'\u2699'}</Text>
       </TouchableOpacity>
 
-      <View style={[styles.levelBadge, { paddingHorizontal: Math.round(20 * s), paddingVertical: Math.round(8 * s) }]}>
-        <Text style={[styles.levelText, { fontSize: Math.round(16 * s) }]}>Seviye {level}</Text>
-      </View>
+      <Animated.View
+        style={[
+          styles.wordArea,
+          { minWidth: Math.round(80 * s), paddingHorizontal: Math.round(20 * s), paddingVertical: Math.round(8 * s), borderRadius: Math.round(16 * s) },
+          currentWord.length > 0 && (isWrong ? styles.wordAreaWrong : styles.wordAreaActive),
+          { transform: [{ translateX: shakeAnim }] },
+        ]}>
+        {currentWord.length > 0 && (
+          <Text style={[styles.wordText, { fontSize: Math.round(20 * s) }]}>{currentWord}</Text>
+        )}
+      </Animated.View>
 
       <TouchableOpacity
         style={[styles.hintBtn, { paddingHorizontal: Math.round(14 * s), paddingVertical: Math.round(8 * s) }]}
@@ -50,13 +60,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     lineHeight: 28,
   },
-  levelBadge: {
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  wordArea: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
   },
-  levelText: {
+  wordAreaActive: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  wordAreaWrong: {
+    backgroundColor: 'rgba(220,60,60,0.5)',
+  },
+  wordText: {
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 4,
   },
   hintBtn: {
     flexDirection: 'row',

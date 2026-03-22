@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Easing,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Level, GameMode } from '../types/game';
@@ -42,12 +43,15 @@ interface Props {
 export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Props) {
   const insets = useSafeAreaInsets();
   const s = useScale();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isLandscape = screenWidth > screenHeight;
 
   const [levelNum, setLevelNum] = useState(initialLevel);
   const [restartKey, setRestartKey] = useState(0);
 
   const [currentLevel, setCurrentLevel] = useState<Level | null>(null);
   const [foundWords, setFoundWords] = useState<boolean[]>([]);
+  const [hintedCells, setHintedCells] = useState<Set<string>>(new Set());
   const [hints, setHints] = useState(MAX_HINTS);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [currentWord, setCurrentWord] = useState('');
@@ -72,8 +76,7 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   const dotAnims = useRef<Animated.Value[]>([]);
 
   // Word history — words from the last ~10 levels, to avoid repeats
-  const recentWordsRef = useRef<string[]>([]);
-  const HISTORY_SIZE = 60; // ~10 levels × 6 words avg
+  const usedWordsRef = useRef<Set<string>>(new Set());
 
   // Stable refs for use in callbacks
   const levelRef = useRef<Level | null>(null);
@@ -90,12 +93,11 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
     setCurrentWord('');
     setWrongWord('');
     setTooltip(null);
+    setHintedCells(new Set());
 
     const handle = setTimeout(() => {
-      const exclude = new Set(recentWordsRef.current);
-      const level = generateLevel(levelNum, mode, exclude);
-      // Add this level's words to history after generation
-      recentWordsRef.current = [...recentWordsRef.current, ...level.words].slice(-HISTORY_SIZE);
+      const level = generateLevel(levelNum, mode, usedWordsRef.current);
+      level.words.forEach(w => usedWordsRef.current.add(w));
       dotAnims.current = level.words.map(() => new Animated.Value(1));
       setCurrentLevel(level);
       setFoundWords(level.words.map(() => false));
@@ -227,27 +229,43 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
 
   const handleHint = useCallback(() => {
     if (hints <= 0 || !currentLevel) return;
-    const idx = foundWordsRef.current.indexOf(false);
-    if (idx < 0) return;
 
-    const newFoundWords = [...foundWordsRef.current];
-    newFoundWords[idx] = true;
-    setFoundWords(newFoundWords);
+    // Build set of already-visible cells (found words + already hinted)
+    const visibleCells = new Set(hintedCells);
+    foundWordsRef.current.forEach((found, wordIdx) => {
+      if (!found) return;
+      const placement = currentLevel.placements[wordIdx];
+      if (!placement) return;
+      for (let i = 0; i < placement.word.length; i++) {
+        const r = placement.dir === 'H' ? placement.row : placement.row + i;
+        const c = placement.dir === 'H' ? placement.col + i : placement.col;
+        visibleCells.add(`${r},${c}`);
+      }
+    });
+
+    const candidates: Array<{ wordIdx: number; cellKey: string }> = [];
+    foundWordsRef.current.forEach((found, wordIdx) => {
+      if (found) return;
+      const placement = currentLevel.placements[wordIdx];
+      if (!placement) return;
+      for (let i = 0; i < placement.word.length; i++) {
+        const r = placement.dir === 'H' ? placement.row : placement.row + i;
+        const c = placement.dir === 'H' ? placement.col + i : placement.col;
+        const key = `${r},${c}`;
+        if (!visibleCells.has(key)) candidates.push({ wordIdx, cellKey: key });
+      }
+    });
+
+    if (candidates.length === 0) return;
+
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    setHintedCells(prev => new Set([...prev, pick.cellKey]));
     setHints(h => h - 1);
-    animateDot(idx);
-
-    if (newFoundWords.every(Boolean)) {
-      setTimeout(() => {
-        const next = (levelRef.current?.level ?? 1) + 1;
-        onLevelChange?.(next);
-        setLevelNum(next);
-      }, 500);
-    }
-  }, [hints, currentLevel, animateDot, onLevelChange]);
+  }, [hints, currentLevel, hintedCells]);
 
   const handleNewGame = useCallback(() => {
     setShowSettings(false);
-    recentWordsRef.current = [];
+    usedWordsRef.current = new Set();
     onLevelChange?.(1);
     setLevelNum(1);
     setRestartKey(k => k + 1);
@@ -294,21 +312,42 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
         onSettings={() => setShowSettings(true)}
       />
 
-      {/* Content area — tooltip overlay is placed here to cover grid + wheel */}
-      <View style={styles.content}>
-        {/* Grid */}
-        <View style={styles.gridContainer}>
+      {/* Content area */}
+      <View style={[styles.content, isLandscape && styles.contentLandscape]}>
+        {/* Left column (portrait: top section) — grid + dots */}
+        <View style={isLandscape ? styles.landscapeLeft : styles.portraitGrid}>
           <WordGrid
             ref={gridRef}
             level={currentLevel}
             foundWords={foundWords}
+            hintedCells={hintedCells}
             onWordPress={handleWordPress}
             highlightedWord={tooltip?.actualWord}
+            containerWidth={isLandscape ? Math.floor(screenWidth / 2) : undefined}
+            containerHeight={isLandscape ? screenHeight - 80 : undefined}
           />
+          {/* Progress dots */}
+          <View style={styles.progressContainer}>
+            {currentLevel.words.map((_, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.progressDot,
+                  foundWords[i] && styles.progressDotFound,
+                  {
+                    width: Math.round(8 * s),
+                    height: Math.round(8 * s),
+                    borderRadius: Math.round(4 * s),
+                    transform: [{ scale: dotAnims.current[i] ?? new Animated.Value(1) }],
+                  },
+                ]}
+              />
+            ))}
+          </View>
         </View>
 
-        {/* Letter wheel */}
-        <View style={styles.wheelContainer}>
+        {/* Right column (portrait: bottom section) — wheel */}
+        <View style={isLandscape ? styles.landscapeRight : styles.portraitWheel}>
           <LetterWheel
             ref={wheelRef}
             letters={currentLevel.letters}
@@ -316,37 +355,17 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
             onSelectionChange={handleSelectionChange}
             onWordSubmit={handleWordSubmit}
             levelKey={currentLevel.level}
+            maxSize={isLandscape ? Math.round(Math.min(screenWidth / 2, screenHeight) - 48) : undefined}
           />
         </View>
 
-        {/* Progress dots */}
-        <View style={styles.progressContainer}>
-          {currentLevel.words.map((_, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.progressDot,
-                foundWords[i] && styles.progressDotFound,
-                {
-                  width: Math.round(8 * s),
-                  height: Math.round(8 * s),
-                  borderRadius: Math.round(4 * s),
-                  transform: [{ scale: dotAnims.current[i] ?? new Animated.Value(1) }],
-                },
-              ]}
-            />
-          ))}
-        </View>
-
-
-        {/* Tooltip — covers the full content area (grid + wheel) */}
+        {/* Tooltip — covers the full content area */}
         {tooltip && (
           <WordTooltip
             word={tooltip.word}
             meaning={tooltip.meaning}
             onDismiss={() => setTooltip(null)}
           />
-
         )}
       </View>
 
@@ -480,6 +499,28 @@ const styles = StyleSheet.create({
   },
   progressDotFound: {
     backgroundColor: '#f0c040',
+  },
+  contentLandscape: {
+    flexDirection: 'row',
+  },
+  landscapeLeft: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  landscapeRight: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  portraitGrid: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  portraitWheel: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   levelLabel: {
     position: 'absolute',

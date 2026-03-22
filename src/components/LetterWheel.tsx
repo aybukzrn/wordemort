@@ -20,10 +20,11 @@ interface Props {
   onSelectionChange: (indices: number[]) => void;
   onWordSubmit: (word: string) => void;
   levelKey: number;
+  maxSize?: number;
 }
 
 export const LetterWheel = forwardRef<LetterWheelRef, Props>(function LetterWheel(
-  { letters, selectedIndices, onSelectionChange, onWordSubmit, levelKey },
+  { letters, selectedIndices, onSelectionChange, onWordSubmit, levelKey, maxSize },
   ref,
 ) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -32,7 +33,7 @@ export const LetterWheel = forwardRef<LetterWheelRef, Props>(function LetterWhee
   const wheelSize = Math.min(
     Math.round(300 * s),
     screenWidth - 32,
-    Math.round(screenHeight * 0.34),
+    maxSize ?? Math.round(screenHeight * 0.34),
   );
 
   // Orbit radius (distance from center to letter circle center)

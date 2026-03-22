@@ -31,12 +31,15 @@ interface CellData {
 interface Props {
   level: Level;
   foundWords: boolean[];
+  hintedCells?: Set<string>;
   onWordPress?: (word: string, isRevealed: boolean) => void;
   highlightedWord?: string;
+  containerWidth?: number;
+  containerHeight?: number;
 }
 
 export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
-  { level, foundWords, onWordPress, highlightedWord },
+  { level, foundWords, hintedCells, onWordPress, highlightedWord, containerWidth, containerHeight },
   ref,
 ) {
   const { width: screenWidth } = useWindowDimensions();
@@ -73,9 +76,8 @@ export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
 
   const naturalWidth = level.gridCols * cellStep - cellGap;
   const naturalHeight = level.gridRows * cellStep - cellGap;
-  const availableWidth = screenWidth - GRID_H_PADDING;
-  // Grid gets ~40% of screen height; rest is for header, word display, wheel, dots
-  const availableHeight = Math.round(screenHeight * 0.40);
+  const availableWidth = (containerWidth ?? screenWidth) - GRID_H_PADDING;
+  const availableHeight = containerHeight ?? Math.round(screenHeight * 0.40);
   const scaleByWidth = naturalWidth > availableWidth ? availableWidth / naturalWidth : 1;
   const scaleByHeight = naturalHeight > availableHeight ? availableHeight / naturalHeight : 1;
   const gridScale = Math.min(scaleByWidth, scaleByHeight);
@@ -211,6 +213,25 @@ export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
     });
   }, [foundWords, level]);
 
+  // ─── Animate newly hinted cells ─────────────────────────────────────────────
+  const prevHintedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!hintedCells) return;
+    hintedCells.forEach(key => {
+      if (prevHintedRef.current.has(key)) return;
+      const anim = animCache.current.map.get(key);
+      if (!anim) return;
+      anim.setValue(0);
+      Animated.spring(anim, {
+        toValue: 1,
+        friction: 5,
+        tension: 200,
+        useNativeDriver: true,
+      }).start();
+    });
+    prevHintedRef.current = new Set(hintedCells);
+  }, [hintedCells]);
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   const gridWidth = level.gridCols * cellStep - cellGap;
   const gridHeight = level.gridRows * cellStep - cellGap;
@@ -250,11 +271,14 @@ export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
           extrapolate: 'clamp',
         });
 
+        const cellKey = `${cell.row},${cell.col}`;
+        const isHinted = !cell.revealed && (hintedCells?.has(cellKey) ?? false);
+        const showLetter = cell.revealed || isHinted;
         const isHighlighted = !!highlightedWord && cell.word === highlightedWord;
 
         return (
           <TouchableOpacity
-            key={`${cell.row},${cell.col}`}
+            key={cellKey}
             activeOpacity={0.65}
             onPress={() => onWordPress?.(cell.word, cell.revealed)}
             style={[
@@ -279,7 +303,7 @@ export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
                   ],
                 },
               ]}>
-              {cell.revealed && (
+              {showLetter && (
                 <Animated.Text
                   style={[
                     styles.cellLetter,

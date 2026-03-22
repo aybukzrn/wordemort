@@ -78,28 +78,9 @@ const TR_EN_WORDS: string[] = (() => {
   return Array.from(set);
 })();
 
-// ─── Difficulty config ────────────────────────────────────────────────────────
-
-interface DifficultyConfig {
-  seedMinLen: number;
-  seedMaxLen: number;
-  wordMinLen: number;
-  wordMaxLen: number;
-  minWords: number;
-  maxWords: number;
-}
-
-function getDifficulty(levelNum: number): DifficultyConfig {
-  if (levelNum <= 3)
-    return { seedMinLen: 3, seedMaxLen: 4, wordMinLen: 3, wordMaxLen: 4, minWords: 3, maxWords: 4 };
-  if (levelNum <= 7)
-    return { seedMinLen: 4, seedMaxLen: 4, wordMinLen: 3, wordMaxLen: 5, minWords: 3, maxWords: 5 };
-  if (levelNum <= 15)
-    return { seedMinLen: 4, seedMaxLen: 5, wordMinLen: 4, wordMaxLen: 5, minWords: 4, maxWords: 5 };
-  if (levelNum <= 25)
-    return { seedMinLen: 5, seedMaxLen: 6, wordMinLen: 4, wordMaxLen: 6, minWords: 4, maxWords: 6 };
-  return { seedMinLen: 5, seedMaxLen: 7, wordMinLen: 5, wordMaxLen: 7, minWords: 4, maxWords: 6 };
-}
+// Sabit parametreler — seviye zorluğu yok, tamamen rastgele
+const MIN_WORDS = 3;
+const MAX_WORDS = 6;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -272,40 +253,36 @@ export function generateLevel(
   const allWords = mode === 'EN_TR' ? EN_TR_WORDS : mode === 'TR_EN' ? TR_EN_WORDS : TR_WORDS;
   const meaningsMap = mode === 'EN_TR' ? EN_TR_MEANINGS : mode === 'TR_EN' ? TR_EN_MEANINGS : TR_MEANINGS;
 
-  const config = getDifficulty(levelNum);
-  const seedPool = allWords.filter(
-    w => w.length >= config.seedMinLen && w.length <= config.seedMaxLen,
-  );
+  const available = excludeWords
+    ? allWords.filter(w => !excludeWords.has(w))
+    : allWords;
 
   for (let attempt = 0; attempt < 3000; attempt++) {
-    const seed = seedPool[Math.floor(rng() * seedPool.length)];
+    const seed = available[Math.floor(rng() * available.length)];
+    if (!seed) continue;
     const uniqueLetters = [...new Set(seed.split(''))];
     if (uniqueLetters.length < 3 || uniqueLetters.length > 8) continue;
 
     const letterCounts = new Map<string, number>();
     for (const ch of seed) letterCounts.set(ch, (letterCounts.get(ch) ?? 0) + 1);
 
-    const formable = allWords.filter(
-      w =>
-        w.length >= config.wordMinLen &&
-        w.length <= config.wordMaxLen &&
-        canFormWord(w, letterCounts) &&
-        (!excludeWords || !excludeWords.has(w)),
+    const formable = available.filter(
+      w => canFormWord(w, letterCounts),
     );
 
-    if (formable.length < config.minWords || formable.length > 50) continue;
+    if (formable.length < MIN_WORDS || formable.length > 50) continue;
 
     for (let combo = 0; combo < 8; combo++) {
       const candidates = shuffle(formable, rng).slice(0, 12);
       let current = [candidates[0]];
 
-      for (let i = 1; i < candidates.length && current.length < config.maxWords; i++) {
+      for (let i = 1; i < candidates.length && current.length < MAX_WORDS; i++) {
         if (buildCrossword([...current, candidates[i]])) {
           current = [...current, candidates[i]];
         }
       }
 
-      if (current.length < config.minWords) continue;
+      if (current.length < MIN_WORDS) continue;
 
       const result = buildCrossword(current);
       if (!result) continue;
@@ -327,6 +304,6 @@ export function generateLevel(
     }
   }
 
-  // Fallback: drop difficulty by one level and retry
-  return generateLevel(Math.max(1, levelNum - 1), mode, excludeWords, numericSeed);
+  // Fallback: tüm kelimeler tükendiyse usedWords'ü sıfırla ve yeniden dene
+  return generateLevel(levelNum, mode, undefined, numericSeed);
 }

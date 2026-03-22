@@ -36,11 +36,13 @@ const MAX_HINTS = 3;
 interface Props {
   mode: GameMode;
   initialLevel?: number;
+  initialUsedWords?: string[];
   onLevelChange?: (level: number) => void;
+  onUsedWordsChange?: (words: string[]) => void;
   onHome: () => void;
 }
 
-export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Props) {
+export function GameScreen({ mode, initialLevel = 1, initialUsedWords, onLevelChange, onUsedWordsChange, onHome }: Props) {
   const insets = useSafeAreaInsets();
   const s = useScale();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -50,6 +52,7 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   const [restartKey, setRestartKey] = useState(0);
 
   const [currentLevel, setCurrentLevel] = useState<Level | null>(null);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [foundWords, setFoundWords] = useState<boolean[]>([]);
   const [hintedCells, setHintedCells] = useState<Set<string>>(new Set());
   const [hints, setHints] = useState(MAX_HINTS);
@@ -75,8 +78,8 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   // Per-word progress dot animations
   const dotAnims = useRef<Animated.Value[]>([]);
 
-  // Word history — words from the last ~10 levels, to avoid repeats
-  const usedWordsRef = useRef<Set<string>>(new Set());
+  // Word history — persisted across app restarts; initialized from saved state
+  const usedWordsRef = useRef<Set<string>>(new Set(initialUsedWords));
 
   // Stable refs for use in callbacks
   const levelRef = useRef<Level | null>(null);
@@ -87,6 +90,7 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   // ─── Level generation ──────────────────────────────────────────────────────
   useEffect(() => {
     setCurrentLevel(null);
+    setLoadingTimeout(false);
     setFoundWords([]);
     setHints(MAX_HINTS);
     setSelectedIndices([]);
@@ -98,12 +102,15 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
     const handle = setTimeout(() => {
       const level = generateLevel(levelNum, mode, usedWordsRef.current);
       level.words.forEach(w => usedWordsRef.current.add(w));
+      onUsedWordsChange?.([...usedWordsRef.current]);
       dotAnims.current = level.words.map(() => new Animated.Value(1));
       setCurrentLevel(level);
       setFoundWords(level.words.map(() => false));
     }, 20);
 
-    return () => clearTimeout(handle);
+    const timeoutHandle = setTimeout(() => setLoadingTimeout(true), 20000);
+
+    return () => { clearTimeout(handle); clearTimeout(timeoutHandle); };
   }, [levelNum, restartKey]);
 
   // ─── Shake animation ───────────────────────────────────────────────────────
@@ -266,10 +273,11 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   const handleNewGame = useCallback(() => {
     setShowSettings(false);
     usedWordsRef.current = new Set();
+    onUsedWordsChange?.([]);
     onLevelChange?.(1);
     setLevelNum(1);
     setRestartKey(k => k + 1);
-  }, [onLevelChange]);
+  }, [onLevelChange, onUsedWordsChange]);
 
   const handleHome = useCallback(() => {
     setShowSettings(false);
@@ -294,8 +302,31 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
   if (!currentLevel) {
     return (
       <View style={[styles.screen, styles.loadingContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color="#fff" />
-        <Text style={styles.loadingText}>Hazırlanıyor…</Text>
+        {loadingTimeout ? (
+          <View style={[styles.timeoutCard, { borderRadius: Math.round(12 * s), padding: Math.round(28 * s) }]}>
+            <Text style={[styles.timeoutTitle, { fontSize: Math.round(17 * s) }]}>
+              Görünüşe göre kelimeleri bitirdin!
+            </Text>
+            <Text style={[styles.timeoutSubtitle, { fontSize: Math.round(13 * s) }]}>
+              Yeniden başlamak ister misin?
+            </Text>
+            <TouchableOpacity
+              style={[styles.timeoutBtn, { borderRadius: Math.round(10 * s), paddingVertical: Math.round(13 * s), marginTop: Math.round(16 * s) }]}
+              onPress={handleNewGame}>
+              <Text style={[styles.timeoutBtnText, { fontSize: Math.round(15 * s) }]}>Yeniden Başla</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.timeoutCancelBtn, { marginTop: Math.round(10 * s) }]}
+              onPress={handleHome}>
+              <Text style={[styles.timeoutCancelText, { fontSize: Math.round(13 * s) }]}>Ana Sayfaya Dön</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <ActivityIndicator size="large" color="#f2e8d0" />
+            <Text style={styles.loadingText}>Hazırlanıyor…</Text>
+          </>
+        )}
       </View>
     );
   }
@@ -433,7 +464,7 @@ export function GameScreen({ mode, initialLevel = 1, onLevelChange, onHome }: Pr
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#1a3a6b',
+    backgroundColor: '#2d2926',
   },
   loadingContainer: {
     justifyContent: 'center',
@@ -441,7 +472,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.6)',
     fontSize: 16,
   },
   content: {
@@ -495,10 +526,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   progressDotFound: {
     backgroundColor: '#f0c040',
+    borderColor: '#c49020',
   },
   contentLandscape: {
     flexDirection: 'row',
@@ -525,64 +559,73 @@ const styles = StyleSheet.create({
   levelLabel: {
     position: 'absolute',
     right: 14,
-    color: 'rgba(255,255,255,0.3)',
-    fontWeight: '500',
+    color: 'rgba(255,255,255,0.25)',
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 32,
+    backgroundColor: '#f2e8d0',
+    borderRadius: 12,
+    padding: 28,
     alignItems: 'center',
-    width: 280,
-    gap: 12,
+    width: 290,
+    gap: 10,
+    borderBottomWidth: 5,
+    borderBottomColor: '#c4a870',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 12,
   },
   modalTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1a3a6b',
-    marginBottom: 4,
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#2a1a08',
+    marginBottom: 6,
+    letterSpacing: 1,
   },
   modalSubtitle: {
-    fontSize: 15,
-    color: '#666',
-    marginBottom: 8,
+    fontSize: 14,
+    color: '#7a5a30',
+    marginBottom: 4,
   },
   primaryBtn: {
-    backgroundColor: '#1a3a6b',
+    backgroundColor: '#2e8040',
     paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 13,
+    borderRadius: 10,
+    borderBottomWidth: 4,
+    borderBottomColor: '#1a5228',
     width: '100%',
     alignItems: 'center',
   },
   primaryBtnText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   secondaryBtn: {
     paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 11,
+    borderRadius: 10,
+    borderBottomWidth: 4,
+    borderBottomColor: '#8f5800',
     width: '100%',
     alignItems: 'center',
-    backgroundColor: 'rgba(26,58,107,0.08)',
+    backgroundColor: '#c47a15',
   },
   secondaryBtnText: {
-    color: '#1a3a6b',
-    fontSize: 15,
-    fontWeight: '600',
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   flyLettersOverlay: {
     position: 'absolute',
@@ -592,20 +635,65 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 20,
   },
+  timeoutCard: {
+    backgroundColor: '#f2e8d0',
+    alignItems: 'center',
+    borderBottomWidth: 5,
+    borderBottomColor: '#c4a870',
+    marginHorizontal: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 12,
+  },
+  timeoutTitle: {
+    color: '#2a1a08',
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  timeoutSubtitle: {
+    color: '#7a5a30',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  timeoutBtn: {
+    backgroundColor: '#2e8040',
+    borderBottomWidth: 4,
+    borderBottomColor: '#1a5228',
+    alignItems: 'center',
+    width: '100%',
+  },
+  timeoutBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  timeoutCancelBtn: {
+    paddingVertical: 8,
+  },
+  timeoutCancelText: {
+    color: '#7a5a30',
+    fontWeight: '600',
+  },
   flyLetterCircle: {
     position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: '#d6c9a0',
+    borderWidth: 2,
+    borderColor: '#a89060',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 6,
     zIndex: 20,
   },
   flyLetterText: {
-    color: '#1a3a6b',
-    fontWeight: '700',
+    color: '#2a1a08',
+    fontWeight: '800',
   },
 });

@@ -13,6 +13,7 @@ type Screen = 'home' | 'game' | 'mp_lobby' | 'mp_game';
 const STORAGE_KEY_ACTIVE_MODE = '@wordemort_mode';
 const STORAGE_KEY_PLAYER_NAME = '@wordemort_player_name';
 const levelKey = (mode: GameMode) => `@wordemort_level_${mode}`;
+const usedWordsKey = (mode: GameMode) => `@wordemort_used_${mode}`;
 
 function NamePrompt({ onConfirm }: { onConfirm: (name: string) => void }) {
   const insets = useSafeAreaInsets();
@@ -93,24 +94,34 @@ export default function App() {
   const [roomInfo, setRoomInfo] = useState<MultiplayerRoomInfo | null>(null);
 
   const savedLevels = useRef<Record<GameMode, number>>({ TR: 1, TR_EN: 1, EN_TR: 1 });
+  const savedUsedWords = useRef<Record<GameMode, string[]>>({ TR: [], TR_EN: [], EN_TR: [] });
   const gameModeRef = useRef<GameMode>('TR');
   gameModeRef.current = gameMode;
 
   useEffect(() => {
     (async () => {
       try {
-        const [modeVal, trVal, trEnVal, enTrVal, nameVal] = await Promise.all([
+        const [modeVal, trVal, trEnVal, enTrVal, nameVal, uwTr, uwTrEn, uwEnTr] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEY_ACTIVE_MODE),
           AsyncStorage.getItem(levelKey('TR')),
           AsyncStorage.getItem(levelKey('TR_EN')),
           AsyncStorage.getItem(levelKey('EN_TR')),
           AsyncStorage.getItem(STORAGE_KEY_PLAYER_NAME),
+          AsyncStorage.getItem(usedWordsKey('TR')),
+          AsyncStorage.getItem(usedWordsKey('TR_EN')),
+          AsyncStorage.getItem(usedWordsKey('EN_TR')),
         ]);
 
         savedLevels.current = {
           TR: parseInt(trVal ?? '1', 10) || 1,
           TR_EN: parseInt(trEnVal ?? '1', 10) || 1,
           EN_TR: parseInt(enTrVal ?? '1', 10) || 1,
+        };
+
+        savedUsedWords.current = {
+          TR: uwTr ? JSON.parse(uwTr) : [],
+          TR_EN: uwTrEn ? JSON.parse(uwTrEn) : [],
+          EN_TR: uwEnTr ? JSON.parse(uwEnTr) : [],
         };
 
         if (nameVal) setPlayerName(nameVal);
@@ -141,6 +152,16 @@ export default function App() {
     savedLevels.current[mode] = level;
     setSavedLevel(level);
     AsyncStorage.setItem(levelKey(mode), String(level));
+  };
+
+  const handleUsedWordsChange = (words: string[]) => {
+    const mode = gameModeRef.current;
+    savedUsedWords.current[mode] = words;
+    if (words.length === 0) {
+      AsyncStorage.removeItem(usedWordsKey(mode));
+    } else {
+      AsyncStorage.setItem(usedWordsKey(mode), JSON.stringify(words));
+    }
   };
 
   const handleHome = () => {
@@ -181,7 +202,9 @@ export default function App() {
         <GameScreen
           mode={gameMode}
           initialLevel={savedLevel}
+          initialUsedWords={savedUsedWords.current[gameMode]}
           onLevelChange={handleLevelChange}
+          onUsedWordsChange={handleUsedWordsChange}
           onHome={handleHome}
         />
       )}

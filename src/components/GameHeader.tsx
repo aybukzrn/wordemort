@@ -31,7 +31,7 @@ export function GameHeader({ currentWord, isWrong, shakeAnim, hints, onHint, onS
           { transform: [{ translateX: shakeAnim }] },
         ]}>
         {currentWord.length > 0 && (
-          <Text style={[styles.wordText, { fontSize: Math.round(20 * s) }]}>{currentWord}</Text>
+          <Text style={[styles.wordText, isWrong && styles.wordTextWrong, { fontSize: Math.round(20 * s) }]}>{currentWord}</Text>
         )}
       </Animated.View>
 
@@ -52,43 +52,61 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   settingsBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#4a3a2a',
+    borderWidth: 2,
+    borderColor: '#2a1a0a',
+    borderBottomWidth: 4,
+    borderBottomColor: '#1a0a00',
     justifyContent: 'center',
     alignItems: 'center',
   },
   settingsIcon: {
-    color: '#fff',
+    color: '#f2e8d0',
     lineHeight: 28,
   },
   wordArea: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 36,
+    borderRadius: 8,
   },
   wordAreaActive: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#f2e8d0',
+    borderBottomWidth: 3,
+    borderBottomColor: '#c4a870',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
   },
   wordAreaWrong: {
-    backgroundColor: 'rgba(220,60,60,0.5)',
+    backgroundColor: '#b83030',
+    borderBottomWidth: 3,
+    borderBottomColor: '#7a1f1f',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
   },
   wordText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: '#2a1a08',
+    fontWeight: '800',
     letterSpacing: 4,
+  },
+  wordTextWrong: {
+    color: '#fff',
   },
   hintBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 20,
-    backgroundColor: '#d4a017',
+    backgroundColor: '#c47a15',
+    borderBottomWidth: 4,
+    borderBottomColor: '#8f5800',
     gap: 4,
   },
   hintIcon: {
     color: '#fff',
-    fontWeight: '800',
+    fontWeight: '900',
   },
   hintCount: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

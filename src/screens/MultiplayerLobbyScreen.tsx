@@ -285,7 +285,7 @@ export function MultiplayerLobbyScreen({ playerName, onRoomReady, onBack }: Prop
             keyboardType="number-pad"
             maxLength={4}
             placeholder="0000"
-            placeholderTextColor="rgba(255,255,255,0.3)"
+            placeholderTextColor="rgba(42,26,8,0.3)"
             textAlign="center"
           />
 
@@ -315,7 +315,7 @@ export function MultiplayerLobbyScreen({ playerName, onRoomReady, onBack }: Prop
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#1a3a6b',
+    backgroundColor: '#2d2926',
   },
   topBar: {
     flexDirection: 'row',
@@ -326,18 +326,25 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     width: 60,
+    backgroundColor: '#4a3a2a',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderBottomWidth: 3,
+    borderBottomColor: '#1a0a00',
   },
   backBtnText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
+    color: '#f2e8d0',
+    fontWeight: '700',
   },
   title: {
-    color: '#fff',
-    fontWeight: '700',
+    color: '#f2e8d0',
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#1e1814',
     padding: 4,
     borderRadius: 12,
     gap: 4,
@@ -349,22 +356,25 @@ const styles = StyleSheet.create({
   },
   tabBtnActive: {
     backgroundColor: '#f0c040',
+    borderBottomWidth: 3,
+    borderBottomColor: '#b89020',
   },
   tabText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(242,232,208,0.5)',
     fontWeight: '600',
   },
   tabTextActive: {
-    color: '#1a3a6b',
+    color: '#2a1a08',
+    fontWeight: '800',
   },
   section: {
     marginTop: 24,
   },
   label: {
-    color: 'rgba(255,255,255,0.6)',
-    fontWeight: '600',
+    color: 'rgba(242,232,208,0.6)',
+    fontWeight: '700',
     marginBottom: 10,
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
   optionRow: {
     flexDirection: 'row',
@@ -372,65 +382,82 @@ const styles = StyleSheet.create({
   optionBtn: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#3a2e22',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: '#5a4a30',
+    borderBottomWidth: 3,
+    borderBottomColor: '#1e1408',
   },
   optionBtnActive: {
-    backgroundColor: '#f0c040',
-    borderColor: '#f0c040',
+    backgroundColor: '#2e8040',
+    borderColor: '#2e8040',
+    borderBottomColor: '#1a5228',
   },
   optionText: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(242,232,208,0.6)',
     fontWeight: '600',
   },
   optionTextActive: {
-    color: '#1a3a6b',
+    color: '#fff',
+    fontWeight: '800',
   },
   primaryBtn: {
-    backgroundColor: '#f0c040',
+    backgroundColor: '#2e8040',
+    borderBottomWidth: 5,
+    borderBottomColor: '#1a5228',
     alignItems: 'center',
+    borderRadius: 12,
   },
   primaryBtnText: {
-    color: '#1a3a6b',
-    fontWeight: '800',
+    color: '#fff',
+    fontWeight: '900',
     letterSpacing: 1,
   },
   waitingBox: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#f2e8d0',
+    borderRadius: 12,
+    borderBottomWidth: 5,
+    borderBottomColor: '#c4a870',
     alignItems: 'center',
     padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 6,
   },
   waitingLabel: {
-    color: 'rgba(255,255,255,0.55)',
-    fontWeight: '600',
+    color: '#7a5a30',
+    fontWeight: '700',
     letterSpacing: 1,
     marginBottom: 4,
   },
   waitingCode: {
-    color: '#f0c040',
-    fontWeight: '800',
+    color: '#2e8040',
+    fontWeight: '900',
     letterSpacing: 8,
   },
   waitingHint: {
-    color: 'rgba(255,255,255,0.5)',
+    color: '#7a5a30',
     marginTop: 8,
+    fontWeight: '500',
   },
   codeInput: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    color: '#fff',
+    backgroundColor: '#f2e8d0',
+    borderWidth: 2,
+    borderColor: '#c4a870',
+    borderBottomWidth: 5,
+    borderBottomColor: '#a08040',
+    color: '#2a1a08',
     paddingVertical: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 12,
+    borderRadius: 10,
   },
   errorText: {
     color: '#ff6b6b',
     textAlign: 'center',
     marginTop: 16,
-    fontWeight: '500',
+    fontWeight: '700',
   },
 });

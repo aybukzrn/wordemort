@@ -295,7 +295,8 @@ export const WordGrid = forwardRef<WordGridRef, Props>(function WordGrid(
                 styles.cell,
                 {
                   borderRadius: Math.round(6 * s),
-                  backgroundColor: isHighlighted ? '#f0c040' : 'rgba(255,255,255,0.92)',
+                  backgroundColor: isHighlighted ? '#f0c040' : '#d6c9a0',
+                  borderBottomColor: isHighlighted ? '#b89020' : '#8a7040',
                   opacity: entranceOpacity,
                   transform: [
                     { scale: entranceScale },
@@ -334,20 +335,24 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: '#d6c9a0',
+    borderWidth: 2,
+    borderColor: '#a89060',
+    borderBottomWidth: 4,
+    borderBottomColor: '#8a7040',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
   },
   cellLetter: {
-    color: '#1a3a6b',
-    fontWeight: '700',
+    color: '#2a1a08',
+    fontWeight: '800',
   },
   cellLetterHighlighted: {
-    color: '#5a3800',
+    color: '#4a2800',
   },
 });

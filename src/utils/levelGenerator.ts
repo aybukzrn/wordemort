@@ -128,10 +128,21 @@ function computeLetterPool(words: string[]): string[] {
   return letters;
 }
 
-function shuffle<T>(arr: T[]): T[] {
+// mulberry32 — fast, seedable 32-bit PRNG
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffle<T>(arr: T[], rng: () => number = Math.random): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -254,7 +265,10 @@ export function generateLevel(
   levelNum: number,
   mode: GameMode = 'TR',
   excludeWords?: Set<string>,
+  numericSeed?: number,
 ): Level {
+  const rng = numericSeed !== undefined ? mulberry32(numericSeed) : Math.random;
+
   const allWords = mode === 'EN_TR' ? EN_TR_WORDS : mode === 'TR_EN' ? TR_EN_WORDS : TR_WORDS;
   const meaningsMap = mode === 'EN_TR' ? EN_TR_MEANINGS : mode === 'TR_EN' ? TR_EN_MEANINGS : TR_MEANINGS;
 
@@ -264,7 +278,7 @@ export function generateLevel(
   );
 
   for (let attempt = 0; attempt < 3000; attempt++) {
-    const seed = seedPool[Math.floor(Math.random() * seedPool.length)];
+    const seed = seedPool[Math.floor(rng() * seedPool.length)];
     const uniqueLetters = [...new Set(seed.split(''))];
     if (uniqueLetters.length < 3 || uniqueLetters.length > 8) continue;
 
@@ -282,7 +296,7 @@ export function generateLevel(
     if (formable.length < config.minWords || formable.length > 50) continue;
 
     for (let combo = 0; combo < 8; combo++) {
-      const candidates = shuffle(formable).slice(0, 12);
+      const candidates = shuffle(formable, rng).slice(0, 12);
       let current = [candidates[0]];
 
       for (let i = 1; i < candidates.length && current.length < config.maxWords; i++) {
@@ -314,5 +328,5 @@ export function generateLevel(
   }
 
   // Fallback: drop difficulty by one level and retry
-  return generateLevel(Math.max(1, levelNum - 1), mode, excludeWords);
+  return generateLevel(Math.max(1, levelNum - 1), mode, excludeWords, numericSeed);
 }

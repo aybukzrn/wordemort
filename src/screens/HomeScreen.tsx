@@ -11,6 +11,7 @@ import { useScale } from '../utils/useScale';
 
 interface Props {
   onSelectMode: (mode: GameMode) => void;
+  onMultiplayer: () => void;
 }
 
 interface ModeConfig {
@@ -45,7 +46,7 @@ const MODES: ModeConfig[] = [
   },
 ];
 
-export function HomeScreen({ onSelectMode }: Props) {
+export function HomeScreen({ onSelectMode, onMultiplayer }: Props) {
   const insets = useSafeAreaInsets();
   const s = useScale();
 
@@ -58,6 +59,15 @@ export function HomeScreen({ onSelectMode }: Props) {
           Mod seçerek oyuna başla
         </Text>
       </View>
+
+      {/* Multiplayer button */}
+      <TouchableOpacity
+        style={[styles.multiBtn, { borderRadius: Math.round(14 * s), marginHorizontal: Math.round(24 * s), marginBottom: Math.round(8 * s), paddingVertical: Math.round(14 * s) }]}
+        activeOpacity={0.75}
+        onPress={onMultiplayer}>
+        <Text style={[styles.multiBtnLabel, { fontSize: Math.round(11 * s) }]}>ÇEVRIMIÇI</Text>
+        <Text style={[styles.multiBtnText, { fontSize: Math.round(18 * s) }]}>Çok Oyunculu ↗</Text>
+      </TouchableOpacity>
 
       {/* Mode cards */}
       <View style={[styles.cards, { gap: Math.round(14 * s), paddingHorizontal: Math.round(24 * s) }]}>
@@ -174,5 +184,21 @@ const styles = StyleSheet.create({
     color: '#1a3a6b',
     fontWeight: '800',
     letterSpacing: 1,
+  },
+  multiBtn: {
+    backgroundColor: 'rgba(240,192,64,0.15)',
+    borderWidth: 1.5,
+    borderColor: '#f0c040',
+    alignItems: 'center',
+  },
+  multiBtnLabel: {
+    color: '#f0c040',
+    fontWeight: '700',
+    letterSpacing: 2,
+    marginBottom: 2,
+  },
+  multiBtnText: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });
